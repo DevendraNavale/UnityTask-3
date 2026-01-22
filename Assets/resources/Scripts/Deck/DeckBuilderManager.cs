@@ -82,25 +82,35 @@ public class DeckBuilderManager : MonoBehaviour
         startBattleButton.interactable = (currentDeck.Count == maxDeckSize);
     }
 
-    public void OnClickStartBattle()
+public void OnClickStartBattle()
+{
+    // HARD SAFETY CHECKS
+    if (currentDeck.Count != maxDeckSize)
     {
-        // HARD SAFETY CHECKS
-        if (currentDeck.Count != maxDeckSize)
-        {
-            Debug.LogWarning("Deck incomplete. Cannot start battle.");
-            return;
-        }
-
-        if (GameFlowManager.Instance == null)
-        {
-            Debug.LogError("GameFlowManager is missing in scene!");
-            return;
-        }
-
-        // Save deck
-        SelectedDeck.deck = new List<UnitData>(currentDeck);
-
-        // Load battle
-        GameFlowManager.Instance.LoadScene("Level1");
+        Debug.LogWarning("Deck incomplete. Cannot start battle.");
+        statusText.text = "Deck incomplete! Cannot start battle.";
+        return;
     }
+
+    if (GameFlowManager.Instance == null)
+    {
+        Debug.LogError("GameFlowManager is missing in scene!");
+        statusText.text = "Error: GameFlowManager missing!";
+        return;
+    }
+
+    // Show match started message
+    Debug.Log("Match has been started");
+
+    // Optional: delay before loading scene if you want player to see message
+    // StartCoroutine(StartBattleAfterDelay(1f));
+
+    // Save deck
+    SelectedDeck.deck = new List<UnitData>(currentDeck);
+
+    // Load battle
+    GameFlowManager.Instance.LoadScene("Level1");
+}
+
+
 }

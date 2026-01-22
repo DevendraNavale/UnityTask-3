@@ -2,55 +2,124 @@ using UnityEngine;
 
 public class MatchEngine : MonoBehaviour
 {
-    [Header("Core Systems")]
-    public CardExecutionRouter clerk;     // Assign in Inspector
-    public RuleSystem ruleSystem;          // Assign in Inspector
+    public static MatchEngine Instance;
 
-   public void RequestCardPlay(UnitData cardData, Troop player)
-{
-    Debug.Log($"[Gate] Card requested: {cardData.unitName}");
+    [Header("Registry")]
+    public UnitRegistry unitRegistry;
 
-    if (ruleSystem != null)
+    private int matchIdCounter = 0;
+    private bool matchRunning;
+
+    private void Awake()
     {
-        if (!ruleSystem.CanPlayCard(cardData))
+        if (Instance != null)
         {
-            Debug.Log("[Gate] Card play blocked by RuleSystem");
+            Destroy(gameObject);
             return;
         }
 
-        Debug.Log("[Gate] Card approved by RuleSystem");
+        Instance = this;
     }
 
-    if (clerk == null)
+    // =================== MATCH ===================
+    public void StartMatch()
     {
-        Debug.LogError("[Gate] Clerk not assigned");
-        return;
+        matchRunning = true;
+        matchIdCounter++;
+
+        Debug.Log(
+            $"MATCH_START | id={matchIdCounter} | time={Time.time}"
+        );
     }
 
-    clerk.Execute(cardData, player);
-}
-
-    #if UNITY_EDITOR
-[ContextMenu("TEST / Play First Card")]
-private void TestPlayCard()
-{
-    if (ruleSystem == null || clerk == null)
+    public void EndMatch(Team winner, string reason)
     {
-        Debug.LogError("[TEST] RuleSystem or Clerk missing");
-        return;
+        matchRunning = false;
+
+        Debug.Log(
+            $"MATCH_END | id={matchIdCounter} | winner={winner} | reason={reason} " +
+            $"| alive_player={unitRegistry.GetPlayerAlive()} " +
+            $"| alive_enemy={unitRegistry.GetEnemyAlive()} " +
+            $"| time={Time.time}"
+        );
     }
 
-    if (ruleSystem.playerSpawner == null)
+    // =================== UNIT SPAWN ===================
+    public void RequestSpawn(UnitData unitData, Team team, Vector3 position, SpawnReason reason)
     {
-        Debug.LogError("[TEST] PlayerSpawner missing in RuleSystem");
-        return;
+        if (!matchRunning)
+        {
+            Debug.LogWarning("[MatchEngine] Spawn blocked: match not running");
+            return;
+        }
+
+        if (unitData == null || unitData.prefab == null)
+        {
+            Debug.LogError("[MatchEngine] Spawn failed: UnitData or prefab missing");
+            return;
+        }
+
+        GameObject unitGO = Instantiate(unitData.prefab, position, Quaternion.identity);
+
+        // Snap to NavMesh
+        if (UnityEngine.AI.NavMesh.SamplePosition(
+            unitGO.transform.position,
+            out var hit,
+            5f,
+            UnityEngine.AI.NavMesh.AllAreas))
+        {
+            unitGO.transform.position = hit.position;
+        }
+
+        // Team
+        TeamComponent tc = unitGO.GetComponent<TeamComponent>();
+        if (tc != null)
+            tc.team = team;
+
+        // Identity
+        UnitIdentity identity = unitGO.GetComponent<UnitIdentity>();
+        if (identity != null)
+        {
+            identity.unitId = unitRegistry.GetNextUnitId();
+            identity.cardSource = unitData.unitName;
+        }
+
+        // Register
+        unitRegistry.Register(unitGO, team);
+
+        // ✅ Explainable log
+        Debug.Log(
+            $"UNIT_SPAWN | id={identity?.unitId} | unit={unitData.unitName} | team={team} " +
+            $"| alive_player={unitRegistry.GetPlayerAlive()} " +
+            $"| alive_enemy={unitRegistry.GetEnemyAlive()} " +
+            $"| reason={reason}"
+        );
     }
 
-    UnitData testCard = ruleSystem.playerSpawner.debugDeck[0];
-    Debug.Log("[TEST] Triggering test card play");
+    // =================== UNIT DAMAGE ===================
+    public void LogUnitDamage(UnitIdentity attacker, UnitIdentity target, float damage)
+    {
+        if (attacker == null || target == null) return;
 
-    RequestCardPlay(testCard, null);
-}
-#endif
+        Debug.Log(
+            $"UNIT_DAMAGE | attackerId={attacker.unitId} | targetId={target.unitId} | dmg={damage}"
+        );
+    }
 
+    // =================== UNIT DEATH ===================
+    public void LogUnitDeath(UnitIdentity unit)
+    {
+        if (unit == null) return;
+
+        TeamComponent tc = unit.GetComponent<TeamComponent>();
+        Team team = tc != null ? tc.team : Team.Player;
+
+        unitRegistry.Unregister(unit.gameObject, team);
+
+        Debug.Log(
+            $"UNIT_DEATH | id={unit.unitId} | unit={unit.cardSource} | team={team} " +
+            $"| alive_player={unitRegistry.GetPlayerAlive()} " +
+            $"| alive_enemy={unitRegistry.GetEnemyAlive()}"
+        );
+    }
 }

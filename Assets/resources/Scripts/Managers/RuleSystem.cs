@@ -4,7 +4,7 @@ using System.Collections.Generic;
 public class RuleSystem : MonoBehaviour
 {
     [Header("References")]
-    public PlayerTroopSpawnerVR playerSpawner;   // 🔑 ADD THIS
+    public PlayerTroopSpawnerVR playerSpawner;
 
     [Header("Limits")]
     public int maxPlayerUnits = 5;
@@ -30,7 +30,8 @@ public class RuleSystem : MonoBehaviour
         Debug.Log("[RULE] Energy OK");
 
         // 3️⃣ Army cap validation
-        if (playerSpawner != null && playerSpawner.ActivePlayerUnits >= maxPlayerUnits)
+        if (MatchEngine.Instance != null &&
+            MatchEngine.Instance.unitRegistry.GetAliveCount(Team.Player) >= maxPlayerUnits)
         {
             Debug.Log("[RULE] Card blocked: Army cap reached");
             return false;
