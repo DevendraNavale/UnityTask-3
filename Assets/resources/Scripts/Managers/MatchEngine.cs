@@ -2,6 +2,9 @@ using UnityEngine;
 
 public class MatchEngine : MonoBehaviour
 {
+    public int ActiveUnitCount { get; private set; }
+public int MAX_UNITS = 80;
+
     public static MatchEngine Instance;
 
     [Header("Registry")]

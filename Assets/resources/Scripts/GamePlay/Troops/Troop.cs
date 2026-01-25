@@ -250,17 +250,34 @@ public class Troop : MonoBehaviour
             FireProjectile(targetBase.transform);
     }
 
-    void FireProjectile(Transform target)
+void FireProjectile(Transform target)
+{
+    if (!ProjectilePoolManager.Instance || !projectileSpawnPoint) 
+        return;
+
+    // 🚨 Projectile Cap Check
+    if (!ProjectilePoolManager.Instance.CanSpawnProjectile())
     {
-        if (!ProjectilePoolManager.Instance || !projectileSpawnPoint) return;
-
-        Projectile p = ProjectilePoolManager.Instance.GetProjectile(
-            troopType == TroopType.Tank ? ProjectileType.Tank : ProjectileType.Archer,
-            projectileSpawnPoint.position,
-            projectileSpawnPoint.rotation);
-
-        p?.Initialize(target, attackDamage, projectileSpeed);
+        Debug.Log("[Troop] Projectile spawn blocked — cap reached");
+        return;
     }
+
+    ProjectileType type = (troopType == TroopType.Tank) ? ProjectileType.Tank : ProjectileType.Archer;
+
+    Projectile p = ProjectilePoolManager.Instance.GetProjectile(
+        type,
+        projectileSpawnPoint.position,
+        projectileSpawnPoint.rotation
+    );
+
+    if (p != null)
+    {
+        // Initialize projectile
+        p.Initialize(target, attackDamage, projectileSpeed);
+    }
+}
+
+
 
     /* ───────────────── HEALTH ───────────────── */
 

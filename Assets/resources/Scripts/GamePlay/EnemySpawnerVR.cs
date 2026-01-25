@@ -19,12 +19,12 @@ public class EnemySpawnerVR : MonoBehaviour
     public GameObject knightPrefab;
     public GameObject tankPrefab;
 
-    [Header("Spawn Points (Aligned with Bridges)")]
+    [Header("Spawn Points")]
     public Transform archerSpawnPoint;
     public Transform knightSpawnPoint;
     public Transform tankSpawnPoint;
 
-    [Header("Enemy Energy (Hidden)")]
+    [Header("Enemy Energy")]
     public EnemyEnergySystem enemyEnergy;
 
     [Header("Energy Costs")]
@@ -32,21 +32,18 @@ public class EnemySpawnerVR : MonoBehaviour
     public float knightCost = 3f;
     public float tankCost = 5f;
 
-    [Header("Spawn Control")]
-    public int maxEnemiesAlive = 3;
+    [Header("Unit Cap")]
+    public int maxEnemiesAlive = 90;
+
+    [Header("Spawn Timing")]
     public float decisionInterval = 2.5f;
     public float initialDelay = 5f;
-
-    [Header("Difficulty Tuning")]
     [Range(0.3f, 1f)]
     public float spawnSpeedMultiplier = 0.7f;
 
-    [Header("Aggression Settings")]
-    [Tooltip("Decision speed multiplier when AI is losing badly")]
+    [Header("Aggression")]
     public float aggressiveDecisionMultiplier = 0.6f;
-
-    [Tooltip("Extra enemy slots unlocked during aggression")]
-    public int aggressiveExtraUnits = 1;
+    public int aggressiveExtraUnits = 10;
 
     /* ───────────────────── RUNTIME ───────────────────── */
 
@@ -71,8 +68,6 @@ public class EnemySpawnerVR : MonoBehaviour
             return;
 
         elapsedTime += Time.deltaTime;
-
-        // Early-game grace period
         if (elapsedTime < initialDelay)
             return;
 
@@ -87,11 +82,14 @@ public class EnemySpawnerVR : MonoBehaviour
             interval *= aggressiveDecisionMultiplier;
         }
 
-        if (CountEnemies() >= allowedEnemies)
+        int currentEnemies = CountEnemies();
+        if (currentEnemies >= allowedEnemies)
+        {
+            Debug.Log($"[EnemySpawnerVR] Spawn blocked → Unit cap reached ({currentEnemies}/{allowedEnemies})");
             return;
+        }
 
         decisionTimer += Time.deltaTime * spawnSpeedMultiplier;
-
         if (decisionTimer < interval)
             return;
 
@@ -99,14 +97,14 @@ public class EnemySpawnerVR : MonoBehaviour
         AttemptStrategicSpawn();
     }
 
-    /* ───────────────────── AGGRESSION LOGIC ───────────────────── */
+    /* ───────────────────── AGGRESSION ───────────────────── */
 
     private void UpdateAggressionState()
     {
         float healthRatio = enemyBase.currentHealth / enemyBase.maxHealth;
 
-        // Trigger aggression only after 90% damage (≤ 10% HP)
-        aggressionState = (healthRatio <= 0.1f)
+        aggressionState =
+            (healthRatio <= 0.1f)
             ? AIAggressionState.Aggressive
             : AIAggressionState.Normal;
     }
@@ -120,18 +118,15 @@ public class EnemySpawnerVR : MonoBehaviour
         switch (choice)
         {
             case TroopType.Tank:
-                if (enemyEnergy.TrySpend(tankCost))
-                    SpawnEnemy(tankPrefab, tankSpawnPoint);
+                TrySpawn(tankPrefab, tankSpawnPoint, tankCost);
                 break;
 
             case TroopType.Melee:
-                if (enemyEnergy.TrySpend(knightCost))
-                    SpawnEnemy(knightPrefab, knightSpawnPoint);
+                TrySpawn(knightPrefab, knightSpawnPoint, knightCost);
                 break;
 
             case TroopType.Ranged:
-                if (enemyEnergy.TrySpend(archerCost))
-                    SpawnEnemy(archerPrefab, archerSpawnPoint);
+                TrySpawn(archerPrefab, archerSpawnPoint, archerCost);
                 break;
         }
     }
@@ -140,14 +135,12 @@ public class EnemySpawnerVR : MonoBehaviour
     {
         GetPlayerTroopComposition(out int melee, out int ranged, out int tank);
 
-        // Desperation mode → force tanks if possible
         if (aggressionState == AIAggressionState.Aggressive &&
             enemyEnergy.currentEnergy >= tankCost)
         {
             return TroopType.Tank;
         }
 
-        // Counter logic
         if (ranged >= melee && ranged >= tank)
             return TroopType.Tank;
 
@@ -157,21 +150,15 @@ public class EnemySpawnerVR : MonoBehaviour
         return TroopType.Ranged;
     }
 
-    /* ───────────────────── BATTLEFIELD ANALYSIS ───────────────────── */
+    /* ───────────────────── ANALYSIS ───────────────────── */
 
-    private void GetPlayerTroopComposition(
-        out int melee,
-        out int ranged,
-        out int tank
-    )
+    private void GetPlayerTroopComposition(out int melee, out int ranged, out int tank)
     {
-        melee = 0;
-        ranged = 0;
-        tank = 0;
+        melee = ranged = tank = 0;
 
         Troop[] troops = FindObjectsByType<Troop>(FindObjectsSortMode.None);
 
-        foreach (var t in troops)
+        foreach (Troop t in troops)
         {
             if (t == null) continue;
 
@@ -189,24 +176,28 @@ public class EnemySpawnerVR : MonoBehaviour
 
     /* ───────────────────── SPAWN ───────────────────── */
 
+    private void TrySpawn(GameObject prefab, Transform point, float cost)
+    {
+        if (!enemyEnergy.TrySpend(cost))
+        {
+            Debug.Log("[EnemySpawnerVR] Spawn blocked → Not enough energy");
+            return;
+        }
+
+        SpawnEnemy(prefab, point);
+    }
+
     private void SpawnEnemy(GameObject prefab, Transform spawnPoint)
     {
         if (prefab == null || spawnPoint == null)
             return;
 
-        GameObject troopGO = Instantiate(prefab, spawnPoint.position, spawnPoint.rotation);
+        GameObject go = Instantiate(prefab, spawnPoint.position, spawnPoint.rotation);
 
-        // Safe NavMesh snap
-        if (NavMesh.SamplePosition(
-            troopGO.transform.position,
-            out NavMeshHit hit,
-            5f,
-            NavMesh.AllAreas))
-        {
-            troopGO.transform.position = hit.position;
-        }
+        if (NavMesh.SamplePosition(go.transform.position, out NavMeshHit hit, 5f, NavMesh.AllAreas))
+            go.transform.position = hit.position;
 
-        TeamComponent tc = troopGO.GetComponent<TeamComponent>();
+        TeamComponent tc = go.GetComponent<TeamComponent>();
         if (tc != null)
             tc.team = Team.Enemy;
     }
@@ -215,10 +206,10 @@ public class EnemySpawnerVR : MonoBehaviour
 
     private int CountEnemies()
     {
-        Troop[] troops = FindObjectsByType<Troop>(FindObjectsSortMode.None);
         int count = 0;
+        Troop[] troops = FindObjectsByType<Troop>(FindObjectsSortMode.None);
 
-        foreach (var t in troops)
+        foreach (Troop t in troops)
         {
             if (t == null) continue;
 
@@ -232,9 +223,7 @@ public class EnemySpawnerVR : MonoBehaviour
     public void Spawn(UnitData cardData, Troop owner)
 {
     Debug.Log($"[EnemySpawnerVR] Card routed: {cardData.unitName} (Day-1 stub)");
-
-    // Day-1: DO NOT spawn yet
-    // Enemy still uses AI logic in Update()
+    // Enemy still uses AI logic in Update() — DO NOT spawn directly
 }
 
 }

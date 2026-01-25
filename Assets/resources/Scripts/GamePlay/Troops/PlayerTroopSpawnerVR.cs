@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.AI;
 using System.Collections.Generic;
 
 public class PlayerTroopSpawnerVR : MonoBehaviour
@@ -14,86 +13,118 @@ public class PlayerTroopSpawnerVR : MonoBehaviour
     public List<UnitData> debugDeck;
     private List<UnitData> activeDeck;
 
-    // ✅ ADD THIS
-    public int ActivePlayerUnits { get; private set; }
+    [Header("Engine")]
+    public MatchEngine matchEngine;
 
     private void Start()
     {
         if (SelectedDeck.deck != null && SelectedDeck.deck.Count > 0)
+        {
             activeDeck = SelectedDeck.deck;
+            Debug.Log("[PlayerSpawner] Using SelectedDeck");
+        }
         else
+        {
             activeDeck = debugDeck;
+            Debug.Log("[PlayerSpawner] Using DebugDeck");
+        }
 
-        ActivePlayerUnits = 0;
+        if (matchEngine == null)
+            Debug.LogError("[PlayerSpawner] MatchEngine NOT assigned");
+
+        if (energySystem == null)
+            Debug.LogError("[PlayerSpawner] EnergySystem NOT assigned");
+
+        if (spawnPoints == null || spawnPoints.Length == 0)
+            Debug.LogError("[PlayerSpawner] SpawnPoints NOT assigned");
     }
 
-    // Connected to UI Buttons (0, 1, 2)
+    // ---------------- UI BUTTON ENTRY ----------------
     public void SpawnUnit(int deckIndex)
     {
-        if (activeDeck == null) return;
-        if (deckIndex < 0 || deckIndex >= activeDeck.Count) return;
+        Debug.Log($"[PlayerSpawner] SpawnUnit called | index={deckIndex}");
+
+        if (activeDeck == null)
+        {
+            Debug.LogError("[PlayerSpawner] ActiveDeck is NULL");
+            return;
+        }
+
+        if (deckIndex < 0 || deckIndex >= activeDeck.Count)
+        {
+            Debug.LogError("[PlayerSpawner] Invalid deck index");
+            return;
+        }
+
+        if (matchEngine == null)
+        {
+            Debug.LogError("[PlayerSpawner] MatchEngine is NULL");
+            return;
+        }
+
+        // 🔒 UNIT CAP GUARD (O(1), NO SEARCH)
+        if (matchEngine.ActiveUnitCount >= matchEngine.MAX_UNITS)
+        {
+            Debug.Log("[GUARD] Spawn rejected — unit cap reached");
+            return;
+        }
 
         UnitData unit = activeDeck[deckIndex];
 
-        if (!energySystem.TrySpend(unit.cost))
-            return;
-
-        if (unit.prefab == null)
+        if (unit == null)
         {
-            Debug.LogError("UnitData prefab missing!");
+            Debug.LogError("[PlayerSpawner] UnitData is NULL");
+            return;
+        }
+
+        if (energySystem == null || !energySystem.TrySpend(unit.cost))
+        {
+            Debug.Log("[PlayerSpawner] Spawn blocked: Not enough energy");
+            return;
+        }
+
+        if (spawnPoints == null || spawnPoints.Length == 0)
+        {
+            Debug.LogError("[PlayerSpawner] No spawn points available");
             return;
         }
 
         Transform spawnPoint = spawnPoints[deckIndex % spawnPoints.Length];
 
-        GameObject troopGO = Instantiate(
-            unit.prefab,
-            spawnPoint.position,
-            spawnPoint.rotation
-        );
+        Debug.Log($"[PlayerSpawner] Requesting spawn: {unit.unitName}");
 
-        // Snap to NavMesh
-        if (NavMesh.SamplePosition(
-            troopGO.transform.position,
-            out NavMeshHit hit,
-            5f,
-            NavMesh.AllAreas))
+        // 🔑 CENTRALIZED SPAWN
+        matchEngine.RequestSpawn(
+            unit,
+            Team.Player,
+            spawnPoint.position,
+            SpawnReason.CardTap
+        );
+    }
+
+    // ---------------- PIPELINE ENTRY (UnitData) ----------------
+    public void SpawnUnit(UnitData unit)
+    {
+        if (unit == null)
         {
-            troopGO.transform.position = hit.position;
+            Debug.LogError("[PlayerSpawner] UnitData is NULL");
+            return;
         }
 
-        // Ensure Player Team
-        TeamComponent tc = troopGO.GetComponent<TeamComponent>();
-        if (tc != null)
-            tc.team = Team.Player;
+        if (activeDeck == null)
+        {
+            Debug.LogError("[PlayerSpawner] ActiveDeck is NULL");
+            return;
+        }
 
-        // ✅ INCREMENT COUNT
-        ActivePlayerUnits++;
-    }
-    // ================= PIPELINE ENTRY (Day-1) =================
-public void SpawnUnit(UnitData unit)
-{
-    if (activeDeck == null)
-    {
-        Debug.LogError("[PlayerSpawner] Active deck is null");
-        return;
-    }
+        int index = activeDeck.IndexOf(unit);
 
-    int index = activeDeck.IndexOf(unit);
+        if (index == -1)
+        {
+            Debug.LogError($"[PlayerSpawner] Unit {unit.unitName} not found in deck");
+            return;
+        }
 
-    if (index == -1)
-    {
-        Debug.LogError($"[PlayerSpawner] Unit {unit.unitName} not found in deck");
-        return;
-    }
-
-    SpawnUnit(index);
-}
-
-
-    // ✅ OPTIONAL (recommended): call this when unit dies
-    public void OnPlayerUnitDestroyed()
-    {
-        ActivePlayerUnits = Mathf.Max(0, ActivePlayerUnits - 1);
+        SpawnUnit(index);
     }
 }
