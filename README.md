@@ -28,5 +28,11 @@ Players deploy units using cards while managing energy and army limits.
 - Managers/ → Match, rule, flow systems
 - Gameplay/ → Player & enemy systems
 
+## Stability & Guards
+- Unit cap enforced
+- Projectile cap enforced
+- Spawn rejection logged
+- Restart safe (no duplicates)
+
 ## Author
 Devendra
